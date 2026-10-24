@@ -1,0 +1,15 @@
+{
+  "name": "피치퍼펙트",
+  "short_name": "피치퍼펙트",
+  "description": "보컬팀 음정 연습",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#10161f",
+  "theme_color": "#10161f",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

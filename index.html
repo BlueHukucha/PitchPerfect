@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>피치퍼펙트</title>
+  <meta name="theme-color" content="#10161f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="피치퍼펙트">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>피치퍼펙트</h1>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-tone" data-view="tone" aria-selected="true">롱톤</button>
+      <button role="tab" id="tab-songs" data-view="songs" aria-selected="false">곡 연습</button>
+      <button role="tab" id="tab-add" data-view="add" aria-selected="false">곡 추가</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 롱톤: hold one note and watch for sagging -->
+    <section id="view-tone" class="view">
+      <div class="readout">
+        <div class="note" id="tone-note">–</div>
+        <div class="letter" id="tone-letter">소리를 내 보세요</div>
+        <div class="meter" aria-hidden="true">
+          <span class="zone"></span>
+          <span class="needle" id="tone-needle"></span>
+        </div>
+        <div class="cents" id="tone-cents">&nbsp;</div>
+        <div class="drift" id="tone-drift">&nbsp;</div>
+      </div>
+      <canvas id="tone-canvas" class="graph" height="180"></canvas>
+      <p class="hint">한 음을 4~8초 길게 불러 보세요. 선이 아래로 기울면 음이 처지고 있는 거예요. 가운데 초록 띠가 ±15 cent예요.</p>
+      <div class="row">
+        <label for="ref-note">기준음</label>
+        <select id="ref-note"></select>
+        <button id="ref-play" class="secondary">기준음 듣기</button>
+      </div>
+      <button id="tone-start" class="primary">마이크 켜기</button>
+    </section>
+
+    <!-- 곡 연습 -->
+    <section id="view-songs" class="view" hidden>
+      <div id="song-list" class="list"></div>
+      <div id="practice" hidden>
+        <div class="practice-head">
+          <button id="practice-back" class="link">← 목록</button>
+          <div>
+            <h2 id="practice-title"></h2>
+            <div class="sub" id="practice-part"></div>
+          </div>
+        </div>
+        <div class="live">
+          <span id="practice-note">–</span>
+          <span id="practice-cents" class="cents">&nbsp;</span>
+        </div>
+        <canvas id="practice-canvas" class="graph tall" height="260"></canvas>
+        <div class="toggles">
+          <label><input type="checkbox" id="opt-play" checked> 기준 녹음 같이 듣기 (이어폰 권장)</label>
+          <label><input type="checkbox" id="opt-fold" checked> 옥타브 차이 무시 (남녀 파트 상관없이)</label>
+        </div>
+        <button id="practice-start" class="primary">연습 시작</button>
+        <div id="result" class="result" hidden></div>
+        <h3 class="history-title">지난 연습</h3>
+        <ol id="history" class="history"></ol>
+        <button id="song-delete" class="danger">이 곡 삭제</button>
+        <div id="delete-confirm" class="confirm" hidden>
+          <span>정말 삭제할까요? 연습 기록도 함께 지워져요.</span>
+          <button id="delete-yes" class="danger">삭제</button>
+          <button id="delete-no" class="secondary">취소</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 곡 추가 -->
+    <section id="view-add" class="view" hidden>
+      <p class="hint">리더나 파트장이 멜로디를 피아노나 목소리로 한 번 녹음하면, 그 음정이 연습할 때 목표선이 돼요. 반주 없이 멜로디만 있는 녹음일수록 정확해요.</p>
+      <div class="field">
+        <label for="add-name">곡 이름</label>
+        <input id="add-name" type="text" placeholder="예: 은혜 (주일 2부)" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="add-part">파트</label>
+        <select id="add-part">
+          <option>멜로디</option><option>소프라노</option><option>알토</option><option>테너</option><option>베이스</option>
+        </select>
+      </div>
+      <div class="row two">
+        <button id="add-record" class="primary">지금 녹음하기</button>
+        <label class="secondary file">파일 불러오기<input id="add-file" type="file" accept="audio/*"></label>
+      </div>
+      <div id="add-status" class="status" role="status"></div>
+      <canvas id="add-canvas" class="graph" height="180" hidden></canvas>
+      <label class="check" id="add-snap-wrap" hidden><input type="checkbox" id="add-snap" checked> 정확한 음으로 보정 (녹음이 살짝 틀려도 목표선은 정확하게)</label>
+      <button id="add-save" class="primary" hidden>저장하기</button>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
