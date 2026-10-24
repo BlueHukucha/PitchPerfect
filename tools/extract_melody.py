@@ -6,12 +6,12 @@ song's key. Output is the melody JSON the app imports.
 
 Usage: python extract_melody.py song.mp3 out.json [--key G] [--save-vocals v.wav]
 """
-import argparse, json, subprocess
+import argparse, json, os, subprocess
 import numpy as np
 import onnxruntime as ort
 import torch, torchcrepe, librosa
 
-MODEL = __file__.rsplit('/', 1)[0] + '/models/Kim_Vocal_2.onnx'
+MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'Kim_Vocal_2.onnx')
 SR = 44100
 N_FFT, HOP, DIM_F, DIM_T = 7680, 1024, 3072, 256
 COMPENSATE = 1.009

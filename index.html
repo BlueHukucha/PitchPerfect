@@ -10,8 +10,6 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-180.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -71,6 +69,7 @@
         <div id="result" class="result" hidden></div>
         <h3 class="history-title">지난 연습</h3>
         <ol id="history" class="history"></ol>
+        <button id="song-export" class="secondary">팀에 공유할 곡 파일 저장</button>
         <button id="song-delete" class="danger">이 곡 삭제</button>
         <div id="delete-confirm" class="confirm" hidden>
           <span>정말 삭제할까요? 연습 기록도 함께 지워져요.</span>
@@ -82,10 +81,9 @@
 
     <!-- 곡 추가 -->
     <section id="view-add" class="view" hidden>
-      <p class="hint">리더나 파트장이 멜로디를 피아노나 목소리로 한 번 녹음하면, 그 음정이 연습할 때 목표선이 돼요. 반주 없이 멜로디만 있는 녹음일수록 정확해요.</p>
       <div class="field">
         <label for="add-name">곡 이름</label>
-        <input id="add-name" type="text" placeholder="예: 은혜 (주일 2부)" autocomplete="off">
+        <input id="add-name" type="text" placeholder="예: 주의 손이" autocomplete="off">
       </div>
       <div class="field">
         <label for="add-part">파트</label>
@@ -93,13 +91,39 @@
           <option>멜로디</option><option>소프라노</option><option>알토</option><option>테너</option><option>베이스</option>
         </select>
       </div>
-      <div class="row two">
-        <button id="add-record" class="primary">지금 녹음하기</button>
-        <label class="secondary file">파일 불러오기<input id="add-file" type="file" accept="audio/*"></label>
+
+      <div class="method">
+        <h3>원곡에서 멜로디 뽑기</h3>
+        <p class="hint">앨범이나 라이브 음원을 올리면 리드보컬 멜로디를 정확한 음으로 바꿔서 목표선을 만들어요. 연습할 때는 이 원곡이 그대로 재생돼요. 무거운 작업이라 PC 크롬에서 해 주세요.</p>
+        <div class="row">
+          <label for="add-key">곡의 키</label>
+          <select id="add-key"><option value="">자동으로 찾기</option></select>
+        </div>
+        <label class="primary file" id="add-original-label">원곡 파일 선택<input id="add-original" type="file" accept="audio/*"></label>
+        <div id="extract-box" class="extract" hidden>
+          <progress id="extract-progress" max="1" value="0"></progress>
+          <div class="extract-row"><span id="extract-stage">준비 중</span><span id="extract-time"></span></div>
+        </div>
       </div>
+
+      <div class="method">
+        <h3>공유받은 곡 파일 열기</h3>
+        <p class="hint">리더가 카톡으로 보낸 곡 파일(.pitch)을 열면 원곡과 목표선이 함께 들어와요.</p>
+        <label class="secondary file">곡 파일 열기<input id="add-package" type="file"></label>
+      </div>
+
+      <details class="method">
+        <summary>멜로디를 직접 녹음하기</summary>
+        <p class="hint">피아노나 목소리로 멜로디만 녹음해서 목표선으로 써요. 반주가 없는 녹음이어야 해요.</p>
+        <div class="row two">
+          <button id="add-record" class="secondary">지금 녹음하기</button>
+          <label class="secondary file">녹음 파일 불러오기<input id="add-file" type="file" accept="audio/*"></label>
+        </div>
+        <label class="check" id="add-snap-wrap" hidden><input type="checkbox" id="add-snap" checked> 정확한 음으로 보정</label>
+      </details>
+
       <div id="add-status" class="status" role="status"></div>
       <canvas id="add-canvas" class="graph" height="180" hidden></canvas>
-      <label class="check" id="add-snap-wrap" hidden><input type="checkbox" id="add-snap" checked> 정확한 음으로 보정 (녹음이 살짝 틀려도 목표선은 정확하게)</label>
       <button id="add-save" class="primary" hidden>저장하기</button>
     </section>
   </main>

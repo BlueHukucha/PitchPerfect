@@ -233,7 +233,7 @@ function drawTone() {
   g.lineWidth = 1;
   g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
   g.fillStyle = colors.muted;
-  g.font = '11px "JetBrains Mono", monospace';
+  g.font = '11px ui-monospace, Menlo, monospace';
   g.fillText('+50', 4, y(50) + 4);
   g.fillText('-50', 4, y(-50) + 4);
 
@@ -250,9 +250,167 @@ function drawTone() {
 
 // ---------- Add a song ----------
 
-const rec = { recorder: null, chunks: [], live: [], t0: 0, blob: null, contour: null, duration: 0 };
+const rec = { recorder: null, chunks: [], live: [], t0: 0, blob: null, contour: null, duration: 0, melody: null };
 
 function setStatus(text) { $('add-status').textContent = text; }
+
+const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const KEY_KO = ['도', '도#', '레', '레#', '미', '파', '파#', '솔', '솔#', '라', '라#', '시'];
+KEY_NAMES.forEach((k, i) => $('add-key').add(new Option(`${k} (${KEY_KO[i]})`, k)));
+
+// Extracted notes -> the point contour practice uses (one point per 20 ms).
+function notesToContour(notes) {
+  const pts = [];
+  for (const n of notes) {
+    for (let t = n.start; t < n.end; t += 0.02) pts.push({ t: +t.toFixed(2), m: n.midi });
+    pts.push({ t: n.end, m: n.midi }, { t: +(n.end + 0.01).toFixed(2), m: null });
+  }
+  return pts;
+}
+
+// ---------- Melody from an album / live recording ----------
+
+let extractWorker = null;
+const STAGES = {
+  download: ['모델 받는 중 (처음 한 번만, 약 70MB)', 0, 0.1],
+  prepare: ['준비 중', 0.1, 0.12],
+  separate: ['리드보컬 분리 중', 0.12, 0.85],
+  resample: ['음정 분석 준비 중', 0.85, 0.87],
+  pitch: ['음정 분석 중', 0.87, 1],
+};
+
+$('add-original').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || extractWorker) return;
+  if (!$('add-name').value) $('add-name').value = file.name.replace(/\.[^.]+$/, '');
+  resetAddPreview();
+  setStatus('원곡을 여는 중…');
+  let buffer;
+  try {
+    const off = new OfflineAudioContext(2, 44100, 44100);
+    buffer = await off.decodeAudioData(await file.arrayBuffer());
+  } catch {
+    setStatus('이 파일은 열 수 없어요. mp3, m4a, wav 파일을 써 주세요.');
+    return;
+  }
+  const left = buffer.getChannelData(0).slice();
+  const right = (buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : buffer.getChannelData(0)).slice();
+  const started = performance.now();
+  $('extract-box').hidden = false;
+  $('add-original-label').classList.add('busy');
+  setStatus(/iPhone|iPad|Android/.test(navigator.userAgent)
+    ? '폰에서는 오래 걸리거나 멈출 수 있어요. 가능하면 PC 크롬에서 해 주세요.' : '');
+
+  extractWorker = new Worker('extract-worker.js', { type: 'module' });
+  extractWorker.onmessage = ({ data }) => {
+    if (data.type === 'progress') {
+      const [label, a, b] = STAGES[data.stage];
+      const frac = a + (b - a) * data.frac;
+      $('extract-progress').value = frac;
+      $('extract-stage').textContent = `${label} ${Math.round(data.frac * 100)}%`;
+      const secs = (performance.now() - started) / 1000;
+      const remain = data.stage === 'separate' && data.frac > 0.05
+        ? ` · 약 ${Math.max(1, Math.round(((secs / frac) * (1 - frac)) / 60))}분 남음` : '';
+      $('extract-time').textContent = `${fmtTime(secs)}${remain}`;
+    } else if (data.type === 'done') {
+      finishExtract();
+      useMelody(file, data.melody, buffer.duration);
+    } else if (data.type === 'error') {
+      finishExtract();
+      setStatus(`멜로디를 뽑지 못했어요. (${data.message}) 새로고침 후 다시 해 보세요.`);
+    }
+  };
+  extractWorker.postMessage({ left, right, key: $('add-key').value || null }, [left.buffer, right.buffer]);
+});
+
+function finishExtract() {
+  if (extractWorker) extractWorker.terminate();
+  extractWorker = null;
+  $('extract-box').hidden = true;
+  $('add-original-label').classList.remove('busy');
+}
+
+function useMelody(blob, melody, duration) {
+  if (melody.notes.length < 5) {
+    setStatus('리드보컬 멜로디를 찾지 못했어요. 보컬이 있는 원곡인지 확인해 주세요.');
+    return;
+  }
+  rec.blob = blob;
+  rec.melody = melody;
+  rec.contour = notesToContour(melody.notes);
+  rec.duration = duration;
+  const near = melody.notes.filter((n) => Math.abs(n.sungCents) <= 20).length;
+  setStatus(`키 ${melody.key}, ${melody.notes.length}개 음을 찾았어요. 원곡 가수가 부른 음의 ${Math.round((near / melody.notes.length) * 100)}%는 정확한 음에서 ±20 cent 안이었고, 나머지는 정확한 음으로 보정했어요.`);
+  $('add-canvas').hidden = false;
+  $('add-save').hidden = false;
+  drawPreview();
+}
+
+function resetAddPreview() {
+  rec.blob = rec.contour = rec.melody = null;
+  $('add-canvas').hidden = $('add-snap-wrap').hidden = $('add-save').hidden = true;
+}
+
+// ---------- Song files shared through KakaoTalk etc. ----------
+// Layout: "PITCHPP1" magic, uint32 header length, JSON header, audio bytes.
+
+const MAGIC = 'PITCHPP1';
+
+async function packSong(song) {
+  const header = new TextEncoder().encode(JSON.stringify({
+    name: song.name, part: song.part, key: song.key, notes: song.notes,
+    duration: song.duration, audioType: song.audio.type,
+  }));
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, header.length);
+  return new Blob([MAGIC, len, header, song.audio], { type: 'application/octet-stream' });
+}
+
+async function unpackSong(file) {
+  const buf = await file.arrayBuffer();
+  if (new TextDecoder().decode(buf.slice(0, 8)) !== MAGIC) throw new Error('not a song file');
+  const len = new DataView(buf, 8, 4).getUint32(0);
+  const header = JSON.parse(new TextDecoder().decode(buf.slice(12, 12 + len)));
+  const audio = new Blob([buf.slice(12 + len)], { type: header.audioType || 'audio/mpeg' });
+  return { header, audio };
+}
+
+$('add-package').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const { header, audio } = await unpackSong(file);
+    const song = {
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      name: header.name, part: header.part, key: header.key, notes: header.notes,
+      createdAt: Date.now(), audio, contour: notesToContour(header.notes),
+      duration: header.duration, takes: [],
+    };
+    await saveSong(song);
+    showView('songs');
+    openPractice(song.id);
+  } catch {
+    setStatus('곡 파일을 열 수 없어요. 리더가 보낸 .pitch 파일인지 확인해 주세요.');
+  }
+});
+
+$('song-export').addEventListener('click', async () => {
+  const song = practice.song;
+  if (!song.notes) {
+    $('song-export').textContent = '직접 녹음한 곡은 아직 공유할 수 없어요';
+    return;
+  }
+  const url = URL.createObjectURL(await packSong(song));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${song.name}.pitch`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+});
 
 $('add-record').addEventListener('click', async () => {
   if (rec.recorder) { stopRecording(); return; }
@@ -321,6 +479,7 @@ function useReference(blob, points) {
     return;
   }
   rec.blob = blob;
+  rec.melody = null;
   rec.contour = clean;
   rec.duration = points.length ? points[points.length - 1].t : 0;
   setStatus(`${fmtTime(rec.duration)} 분량의 멜로디를 찾았어요. 목표선을 확인하고 저장해 주세요.`);
@@ -336,9 +495,9 @@ const finalContour = () => ($('add-snap').checked ? snapContour(rec.contour) : r
 
 function drawPreview() {
   if (!rec.contour) return;
-  const pts = finalContour();
+  const pts = rec.melody ? rec.contour : finalContour();
   const { g, w, h } = prep($('add-canvas'));
-  const { lo, hi } = rangeOf(pts);
+  const { lo, hi } = rangeOf(pts, true);
   const y = (m) => h - 10 - ((m - lo) / (hi - lo)) * (h - 20);
   const x = (t) => (t / Math.max(rec.duration, 0.1)) * w;
   g.strokeStyle = colors.target;
@@ -347,9 +506,13 @@ function drawPreview() {
   strokeContour(g, pts, x, y);
 }
 
-function rangeOf(pts) {
-  const ms = pts.filter((p) => p.m != null).map((p) => p.m);
-  return { lo: Math.min(...ms) - 2, hi: Math.max(...ms) + 2 };
+// Pitch range to draw. Robust mode ignores the odd stray note.
+function rangeOf(pts, robust = false) {
+  const ms = pts.filter((p) => p.m != null).map((p) => p.m).sort((a, b) => a - b);
+  if (!ms.length) return { lo: 55, hi: 75 };
+  const lo = robust ? ms[Math.floor(ms.length * 0.03)] : ms[0];
+  const hi = robust ? ms[Math.floor(ms.length * 0.97)] : ms[ms.length - 1];
+  return { lo: lo - 2, hi: hi + 2 };
 }
 
 function strokeContour(g, pts, x, y, from = -Infinity, to = Infinity) {
@@ -376,14 +539,14 @@ $('add-save').addEventListener('click', async () => {
     part: $('add-part').value,
     createdAt: Date.now(),
     audio: rec.blob,
-    contour: finalContour(),
+    contour: rec.melody ? rec.contour : finalContour(),
     duration: rec.duration,
     takes: [],
   };
+  if (rec.melody) Object.assign(song, { key: rec.melody.key, notes: rec.melody.notes });
   await saveSong(song);
-  rec.blob = rec.contour = null;
+  resetAddPreview();
   $('add-name').value = '';
-  $('add-canvas').hidden = $('add-snap-wrap').hidden = $('add-save').hidden = true;
   setStatus('');
   showView('songs');
   openPractice(song.id);
@@ -391,7 +554,7 @@ $('add-save').addEventListener('click', async () => {
 
 // ---------- Practice ----------
 
-const practice = { song: null, buffer: null, source: null, running: false, t0: 0, samples: [], range: null, last: null };
+const practice = { song: null, buffer: null, source: null, running: false, t0: 0, samples: [], range: null, oct: 0, votes: [] };
 
 async function renderSongList() {
   $('practice').hidden = true;
@@ -433,13 +596,16 @@ async function openPractice(id) {
   practice.song = song;
   practice.buffer = null;
   practice.samples = [];
-  practice.range = rangeOf(song.contour);
+  practice.range = rangeOf(song.contour, true);
+  practice.oct = 0;
+  practice.votes = [];
   $('song-list').hidden = true;
   $('practice').hidden = false;
   $('result').hidden = true;
   $('delete-confirm').hidden = true;
   $('practice-title').textContent = song.name;
-  $('practice-part').textContent = `${song.part} · ${fmtTime(song.duration)}`;
+  $('practice-part').textContent = [song.part, song.key && `키 ${song.key}`, fmtTime(song.duration)].filter(Boolean).join(' · ');
+  $('song-export').hidden = !song.notes;
   renderHistory();
   drawPractice(0);
   try {
@@ -500,7 +666,15 @@ function practiceTick() {
       if (err == null || Math.abs(e) < Math.abs(err)) { err = e; target = m; }
     }
   }
-  const shown = sung != null && target != null && fold ? nearestOctave(sung, target) : sung;
+  // Draw the target in the singer's octave: vote on the octave gap.
+  if (fold && sung != null && target != null) {
+    practice.votes.push(Math.round((sung - target) / 12));
+    if (practice.votes.length > 90) practice.votes.shift();
+    const counts = {};
+    for (const v of practice.votes) counts[v] = (counts[v] || 0) + 1;
+    practice.oct = Number(Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]);
+  }
+  const shown = fold && sung != null && target != null ? nearestOctave(sung, target + 12 * practice.oct) : sung;
   practice.samples.push({ t, sung: shown, target, err });
 
   if (sung != null) {
@@ -514,13 +688,15 @@ function practiceTick() {
 function drawPractice(t) {
   const song = practice.song;
   const { g, w, h } = prep($('practice-canvas'));
-  const { lo, hi } = practice.range;
+  const shift = 12 * practice.oct;
+  const lo = practice.range.lo + shift, hi = practice.range.hi + shift;
   const span = 6, head = 0.35;
   const x = (s) => ((s - t) / span + head) * w;
-  const y = (m) => h - 12 - ((m - lo) / (hi - lo)) * (h - 24);
+  const y = (m) => h - 12 - ((Math.max(lo, Math.min(hi, m)) - lo) / (hi - lo)) * (h - 24);
+  const yt = (m) => y(m + shift);
 
   // Semitone grid with note names on whole tones of C major.
-  g.font = '10px "JetBrains Mono", monospace';
+  g.font = '10px ui-monospace, Menlo, monospace';
   for (let m = Math.ceil(lo); m <= hi; m++) {
     g.strokeStyle = colors.line;
     g.globalAlpha = m % 12 === 0 ? 1 : 0.5;
@@ -536,7 +712,7 @@ function drawPractice(t) {
   g.lineWidth = 8;
   g.lineCap = 'round';
   g.globalAlpha = 0.6;
-  strokeContour(g, song.contour, x, y, t - span * head, t + span * (1 - head));
+  strokeContour(g, song.contour, x, yt, t - span * head, t + span * (1 - head));
   g.globalAlpha = 1;
 
   g.strokeStyle = colors.ink;
@@ -639,7 +815,17 @@ window.addEventListener('resize', () => {
   drawPreview();
 });
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+// The service worker also adds the headers that let melody extraction use
+// several CPU threads. Reload once when it first takes over.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js');
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    try {
+      if (!crossOriginIsolated && !sessionStorage.getItem('pp-reloaded')) {
+        sessionStorage.setItem('pp-reloaded', '1');
+        location.reload();
+      }
+    } catch {}
+  });
 }
 drawTone();
